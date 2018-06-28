@@ -3,6 +3,7 @@ from collections import namedtuple
 from fs import open_fs
 from datetime import datetime
 import os
+import six
 
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
 
@@ -40,7 +41,7 @@ class FileSystem(object):
 
         try:
             d = File.objects.get(name=path, namespace=namespace)
-            with self.fs.open(str(d.id), "rb") as f:
+            with self.fs.open(six.u(str(d.id)), "rb") as f:
                 return f.read()
         except DoesNotExist:
             return None
@@ -58,7 +59,8 @@ class FileSystem(object):
             d.updated = datetime.now()
             d.size = len(content)
             d.save()
-            with self.fs.open(str(d.id), "wb") as f:
+
+            with self.fs.open(six.u(str(d.id)), "wb") as f:
                 f.write(content)
         else:
             raise Exception("Path must starts with a slash /")
@@ -100,7 +102,7 @@ class FileSystem(object):
             namespace = self.namespace
         try:
             d = File.objects.get(name=path, namespace=namespace)
-            self.fs.remove(str(d.id))
+            self.fs.remove(six.u(str(d.id)))
             d.delete()
             return True
         except DoesNotExist:
