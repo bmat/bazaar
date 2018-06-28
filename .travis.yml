@@ -1,0 +1,15 @@
+language: python
+python:
+- '3.6'
+env:
+  global:
+  - PYTHONPATH="."
+script: python bazaar/test/test.py
+deploy:
+  provider: pypi
+  user: bmat
+  password:
+    secure: rL3cSgR+l7rcvbqHJNa2teyyMjYfqhkptl3WWJL5chKIVtUBv7tPBZNTgFivDDo1Ddd+Bnootz1t5tN7ZfPtrR7xIy6qfC2WqKJEPWDoH/NCQGXnCL227umNblU4Zoy5CGB8fpSa8iyvQrVKyogt19GPGz6v1HTDEbmbYseGFvrtDceacdNjhVvPj7GjHQsoUyYTuLpegDBUPOBDw7pm+KE3FXCawjVhxSzfpPEkn6O8/ztzcaEhCOsgTQk5h19r39LcVeJWP/BC97/WuhnyJFsDCU23sR84ffhqBfg3NaN182qJXIkTt5Jl4QQMw6l97iv8ayg34ayta4idPVqHByT3wa6OSRnWPZcbxhycmv8tpwHWssEgAJqQ5QJNV++fVMCHWjXEH/mZTZPaMgqYCDvjGRv4mC9rhBJKzK8DIvcuMwZHlu554cDmF86/GDE8d8tE7mkoaGv4k3CeT1FEqsI3OtEEyfGRqx150U9Z+urj3TlZtdMXn2+ZOqBkSYSOOXL2O7xS3P4eYtSwylOOVn0lWUi5KNr9YPdKsXmc6C3UldwWAyyG3yqU2Va8+9ZEUatJzHyrJH/m7dDdBl4VdXBrWZ+aT3wMxIqRHFNZZv/1ZF37zIF490faVzFXO2wP3F0lTcv0dfoEsCpGJFnF2SqKvZw49yDmz0oGUubuVho=
+  distributions: bdist_wheel
+  on:
+    tags: true
