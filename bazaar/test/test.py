@@ -11,7 +11,7 @@ class TestFileSystem(unittest.TestCase):
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
         os.mkdir(tmp_dir)
-        self.fs = FileSystem(tmp_dir)
+        self.fs = FileSystem(tmp_dir, db_uri="mongomock://localhost")
         File.drop_collection()
 
     def test_create_file(self):

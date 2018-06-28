@@ -4,7 +4,7 @@ python:
 env:
   global:
   - PYTHONPATH="."
-script: python bazaar/test/test.py
+script: pip install mongomock && python bazaar/test/test.py
 deploy:
   provider: pypi
   user: bmat
