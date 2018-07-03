@@ -1,9 +1,10 @@
-from mongoengine import Document, DateTimeField, IntField, StringField, DoesNotExist, register_connection
+from mongoengine import Document, DateTimeField, IntField, StringField, DoesNotExist, register_connection, DictField
 from collections import namedtuple
 from fs import open_fs
 from datetime import datetime
 import os
 import six
+import fs.iotools
 
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
 
@@ -14,8 +15,21 @@ class File(Document):
     name = StringField()
     size = IntField()
     namespace = StringField()
+    extras = DictField()
 
     meta = {'db_alias': 'bazaar'}
+
+
+
+# Some monkey patching to track opened files and set filesize on close
+opened_files = {}
+original_close = fs.iotools.RawWrapper.close
+def close(self):
+    file_document = opened_files[self]
+    file_document.size=self.tell()
+    file_document.save()
+    original_close(self)
+fs.iotools.RawWrapper.close = close
 
 
 class FileSystem(object):
@@ -43,6 +57,60 @@ class FileSystem(object):
             d = File.objects.get(name=path, namespace=namespace)
             with self.fs.open(six.u(str(d.id)), "rb") as f:
                 return f.read()
+        except DoesNotExist:
+            return None
+
+
+    def _close_callback(self, event):
+        print(event)
+
+    def open(self, path, mode, namespace=None):
+        if namespace is None:
+            namespace = self.namespace
+        try:
+            try:
+                d = File.objects.get(name=path, namespace=namespace)
+            except DoesNotExist:
+                d = File(name=path, namespace=namespace)
+                d.created = datetime.now()
+            d.updated = datetime.now()
+            d.save()
+            file = self.fs.open(six.u(str(d.id)), mode)
+            opened_files[file] = d
+            return file
+        except DoesNotExist:
+            return None
+
+    def change_namespace(self, path, from_namespace, to_namespace):
+        try:
+            # Destination should not exists
+            d = File.objects.get(name=path, namespace=to_namespace)
+            return False
+        except DoesNotExist:
+            try:
+                # But source should exists
+                d = File.objects.get(name=path, namespace=from_namespace)
+                d.namespace = to_namespace
+                d.save()
+            except DoesNotExist:
+                return False
+
+    def set_extras(self, path, extras, namespace=None):
+        if namespace is None:
+            namespace = self.namespace
+        try:
+            d = File.objects.get(name=path, namespace=namespace)
+            d.extras = extras
+            d.save()
+        except DoesNotExist:
+            return False
+
+    def get_extras(self, path, extras, namespace=None):
+        if namespace is None:
+            namespace = self.namespace
+        try:
+            d = File.objects.get(name=path, namespace=namespace)
+            return d.extras
         except DoesNotExist:
             return None
 
@@ -81,6 +149,17 @@ class FileSystem(object):
         files = File.objects(namespace=namespace, name=name)
         return list(set([file.name.split("/")[-2] for file in files]))
 
+    def rename(self, old_path, new_path, namespace=None):
+        if namespace is None:
+            namespace = self.namespace
+
+        try:
+            d = File.objects.get(name=old_path, namespace=namespace)
+            d.name=new_path
+            d.save()
+            return True
+        except DoesNotExist:
+            return False
     def attrs(self, path, namespace=None):
         if namespace is None:
             namespace = self.namespace
@@ -110,4 +189,5 @@ class FileSystem(object):
 
     def close(self):
         self.fs.close()
+
 
