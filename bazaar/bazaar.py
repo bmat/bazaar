@@ -1,4 +1,4 @@
-from mongoengine import Document, DateTimeField, IntField, StringField, DoesNotExist, register_connection
+from mongoengine import Document, DateTimeField, IntField, StringField, DoesNotExist, register_connection, DictField
 from collections import namedtuple
 from fs import open_fs
 from datetime import datetime
@@ -14,8 +14,32 @@ class File(Document):
     name = StringField()
     size = IntField()
     namespace = StringField()
+    extras = DictField()
 
     meta = {'db_alias': 'bazaar'}
+
+
+class BufferWrapper(object):
+    def __init__(self, wrapped_object, file_document):
+        self.wrapped_object = wrapped_object
+        self.file_document = file_document
+
+    def __getattr__(self, attr):
+        orig_attr = self.wrapped_object.__getattribute__(attr)
+        if callable(orig_attr):
+            def hooked(*args, **kwargs):
+                if attr == "close":
+                    self.file_document.size = self.wrapped_object.tell()
+                    self.file_document.save()
+
+                result = orig_attr(*args, **kwargs)
+                if result == self.wrapped_object:
+                    return self
+                return result
+
+            return hooked
+        else:
+            return orig_attr
 
 
 class FileSystem(object):
@@ -43,6 +67,55 @@ class FileSystem(object):
             d = File.objects.get(name=path, namespace=namespace)
             with self.fs.open(six.u(str(d.id)), "rb") as f:
                 return f.read()
+        except DoesNotExist:
+            return None
+
+    def open(self, path, mode, namespace=None):
+        if namespace is None:
+            namespace = self.namespace
+        try:
+            try:
+                d = File.objects.get(name=path, namespace=namespace)
+            except DoesNotExist:
+                d = File(name=path, namespace=namespace)
+                d.created = datetime.now()
+            d.updated = datetime.now()
+            d.save()
+            file = self.fs.open(six.u(str(d.id)), mode)
+            return BufferWrapper(file, d)
+        except DoesNotExist:
+            return None
+
+    def change_namespace(self, path, from_namespace, to_namespace):
+        try:
+            # Destination should not exists
+            d = File.objects.get(name=path, namespace=to_namespace)
+            return False
+        except DoesNotExist:
+            try:
+                # But source should exists
+                d = File.objects.get(name=path, namespace=from_namespace)
+                d.namespace = to_namespace
+                d.save()
+            except DoesNotExist:
+                return False
+
+    def set_extras(self, path, extras, namespace=None):
+        if namespace is None:
+            namespace = self.namespace
+        try:
+            d = File.objects.get(name=path, namespace=namespace)
+            d.extras = extras
+            d.save()
+        except DoesNotExist:
+            return False
+
+    def get_extras(self, path, extras, namespace=None):
+        if namespace is None:
+            namespace = self.namespace
+        try:
+            d = File.objects.get(name=path, namespace=namespace)
+            return d.extras
         except DoesNotExist:
             return None
 
@@ -81,10 +154,22 @@ class FileSystem(object):
         files = File.objects(namespace=namespace, name=name)
         return list(set([file.name.split("/")[-2] for file in files]))
 
+    def rename(self, old_path, new_path, namespace=None):
+        if namespace is None:
+            namespace = self.namespace
+
+        try:
+            d = File.objects.get(name=old_path, namespace=namespace)
+            d.name = new_path
+            d.save()
+            return True
+        except DoesNotExist:
+            return False
+
     def attrs(self, path, namespace=None):
         if namespace is None:
             namespace = self.namespace
-            
+
         try:
             f = File.objects.get(namespace=namespace, name=path)
             return FileAttrs(
@@ -110,4 +195,5 @@ class FileSystem(object):
 
     def close(self):
         self.fs.close()
+
 
