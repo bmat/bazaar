@@ -24,7 +24,7 @@ class BufferWrapper(object):
         self.wrapped_object = wrapped_object
         self.file_document = file_document
 
-    def __getattr__(self, attr):
+    def __getattr__(self,attr):
         orig_attr = self.wrapped_object.__getattribute__(attr)
         if callable(orig_attr):
             def hooked(*args, **kwargs):
@@ -36,7 +36,6 @@ class BufferWrapper(object):
                 if result == self.wrapped_object:
                     return self
                 return result
-
             return hooked
         else:
             return orig_attr
@@ -144,7 +143,7 @@ class FileSystem(object):
 
         name = {"$regex": '^{dir}/([^\/]*)$'.format(dir=path if path != "/" else "")}
         files = File.objects(namespace=namespace, name=name)
-        return [file.name.split("/")[-1] for file in files]
+        return [file.name.split("/")[-1] for file in files if file.size >= 0]
 
     def list_dirs(self, path, namespace=None):
         if namespace is None:
@@ -165,7 +164,6 @@ class FileSystem(object):
             return True
         except DoesNotExist:
             return False
-
     def attrs(self, path, namespace=None):
         if namespace is None:
             namespace = self.namespace
@@ -195,5 +193,6 @@ class FileSystem(object):
 
     def close(self):
         self.fs.close()
+
 
 
