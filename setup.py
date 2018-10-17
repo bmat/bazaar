@@ -6,7 +6,7 @@ with open('requirements.txt') as fp:
 setup(
     name='bazaar',
     packages=['bazaar'],
-    version='0.6',
+    version='0.7',
     description='Agnostic file storage',
     author='BMAT developers',
     author_email='tv-av@bmat.com',
