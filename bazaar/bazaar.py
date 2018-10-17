@@ -24,7 +24,7 @@ class BufferWrapper(object):
         self.wrapped_object = wrapped_object
         self.file_document = file_document
 
-    def __getattr__(self,attr):
+    def __getattr__(self, attr):
         orig_attr = self.wrapped_object.__getattribute__(attr)
         if callable(orig_attr):
             def hooked(*args, **kwargs):
@@ -36,9 +36,92 @@ class BufferWrapper(object):
                 if result == self.wrapped_object:
                     return self
                 return result
+
             return hooked
         else:
             return orig_attr
+
+# Mongo queries for list directories
+
+root = [
+{
+    "$match":
+    {
+        "name": {'$regex': '^([^\\/]*)/'}
+    }
+},
+{
+    "$project" : {
+        "name": {
+            "$split": ["$name", "/"]
+            }
+    }
+},
+{
+    "$match": {
+        'name.2': {"$exists": True}
+    }
+},
+{
+    "$project" : {
+        "name": {
+            "$arrayElemAt": ["$name", 1]
+            }
+    }
+},
+{
+    "$group": {
+        "_id": "$name"
+    }
+}
+]
+
+def list_dir_query(path):
+    if path == "/":
+        return root
+    else:
+        return [
+        {
+            "$match":
+            {
+                "name": {'$regex': '^{path}([^\\/]*)/'.format(path=path)}
+            }
+        },
+        {
+            "$project" : {
+                "name": {
+                    "$split": ["$name", path]
+                    }
+            }
+        }
+        ,
+        {
+            "$project" : {
+                "name": {
+                    "$split": [{"$arrayElemAt": ["$name", 1]}, "/"]
+                    }
+            }
+        },
+        {
+        "$match": {
+            'name.2': {"$exists": True}
+        }
+        }
+        ,
+        {
+            "$project" : {
+                "name": {
+                    "$arrayElemAt": ["$name", 1]
+                    }
+            }
+        },
+        {
+            "$group": {
+                "_id": "$name"
+            }
+        }
+
+        ]
 
 
 class FileSystem(object):
@@ -143,15 +226,17 @@ class FileSystem(object):
 
         name = {"$regex": '^{dir}/([^\/]*)$'.format(dir=path if path != "/" else "")}
         files = File.objects(namespace=namespace, name=name)
-        return [file.name.split("/")[-1] for file in files if file.size >= 0]
+        return [file.name.split("/")[-1] for file in files]
 
     def list_dirs(self, path, namespace=None):
         if namespace is None:
             namespace = self.namespace
 
-        name = {"$regex": '^{dir}/([^\/]*)/([^\/]*)$'.format(dir=path if path != "/" else "")}
-        files = File.objects(namespace=namespace, name=name)
-        return list(set([file.name.split("/")[-2] for file in files]))
+        query = list_dir_query(path)
+        if namespace is not None:
+            query[0]["$match"]["namespace"] = namespace
+
+        return [f["_id"] for f in File.objects.aggregate(*query)]
 
     def rename(self, old_path, new_path, namespace=None):
         if namespace is None:
@@ -164,6 +249,7 @@ class FileSystem(object):
             return True
         except DoesNotExist:
             return False
+
     def attrs(self, path, namespace=None):
         if namespace is None:
             namespace = self.namespace
