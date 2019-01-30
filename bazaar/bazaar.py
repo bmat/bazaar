@@ -216,8 +216,11 @@ class FileSystem(object):
             d.save()
 
             try:
-                with self.fs.open(six.u(str(d.id)), "wb") as f:
+                filename = six.u(str(d.id))
+                with self.fs.open(filename, "wb") as f:
                     f.write(content)
+                if d.size != self.fs.getsize(filename):
+                    raise Exception("Calculated size and file size are different!")
             except Exception as e:
                 # Something wrong happened
                 file_id = six.u(str(d.id))
