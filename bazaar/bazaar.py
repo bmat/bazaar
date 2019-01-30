@@ -215,8 +215,16 @@ class FileSystem(object):
             d.size = len(content)
             d.save()
 
-            with self.fs.open(six.u(str(d.id)), "wb") as f:
-                f.write(content)
+            try:
+                with self.fs.open(six.u(str(d.id)), "wb") as f:
+                    f.write(content)
+            except Exception as e:
+                # Something wrong happened
+                file_id = six.u(str(d.id))
+                d.delete()
+                if self.fs.exists(file_id):
+                    self.fs.remove(file_id)
+                raise e
         else:
             raise Exception("Path must starts with a slash /")
 
@@ -231,6 +239,7 @@ class FileSystem(object):
     def list_dirs(self, path, namespace=None):
         if namespace is None:
             namespace = self.namespace
+
 
         query = list_dir_query(path)
         if namespace is not None:
@@ -279,6 +288,5 @@ class FileSystem(object):
 
     def close(self):
         self.fs.close()
-
 
 
