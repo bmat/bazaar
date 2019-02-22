@@ -54,6 +54,15 @@ class TestFileSystem(unittest.TestCase):
         # A third level
         self.fs.put(path="/dir1/subdir/prettyfile", content="a".encode())
         self.assertListEqual(["prettyfile"], self.fs.list("/dir1/subdir"))
+        
+    def test_exists(self):
+        namespace = "test"
+        self.assertFalse(self.fs.exists("/my_file.txt", namespace=namespace))
+        content = "This is a test"
+        path = "/my_file.txt"
+        self.fs.put(path=path, content=content.encode(), namespace=namespace)
+        self.assertTrue(self.fs.exists("/my_file.txt", namespace=namespace))
+        self.assertFalse(self.fs.exists("/my_file.txt"))
 
     # Mongomock aggregate does not work
     def test_directories(self):

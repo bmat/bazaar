@@ -31,7 +31,6 @@ class BufferWrapper(object):
                 if attr == "close":
                     self.file_document.size = self.wrapped_object.tell()
                     self.file_document.save()
-
                 result = orig_attr(*args, **kwargs)
                 if result == self.wrapped_object:
                     return self
@@ -142,6 +141,7 @@ class FileSystem(object):
         self.namespace = namespace
 
     def get(self, path, namespace=None):
+        path = os.path.realpath(path)
         if namespace is None:
             namespace = self.namespace
 
@@ -153,22 +153,34 @@ class FileSystem(object):
             return None
 
     def open(self, path, mode, namespace=None):
-        if namespace is None:
-            namespace = self.namespace
-        try:
+        if path.startswith("/"):
+            path = os.path.realpath(path)
+            if namespace is None:
+                namespace = self.namespace
+
             try:
                 d = File.objects.get(name=path, namespace=namespace)
             except DoesNotExist:
-                d = File(name=path, namespace=namespace)
-                d.created = datetime.now()
-            d.updated = datetime.now()
-            d.save()
-            file = self.fs.open(six.u(str(d.id)), mode)
-            return BufferWrapper(file, d)
-        except DoesNotExist:
-            return None
+                if "w" in mode:
+                    d = File(name=path, namespace=namespace)
+                    d.created = datetime.now()
+                    d.updated = datetime.now()
+                    d.save()
+                else:
+                    raise FileNotFoundError("[Errno 2] No such file or directory: '{filename}'".format(filename=path))
+            try:
+                file = self.fs.open(six.u(str(d.id)), mode)
+                file.close()  # Force the file creation for force error and avoid to have the entity in the database but not the file
+                file = self.fs.open(six.u(str(d.id)), mode)
+                return BufferWrapper(file, d)
+            except Exception as e:
+                d.delete()
+                raise e
+        else:
+            raise Exception("Path must starts with a slash /")
 
     def change_namespace(self, path, from_namespace, to_namespace):
+        path = os.path.realpath(path)
         try:
             # Destination should not exists
             d = File.objects.get(name=path, namespace=to_namespace)
@@ -183,6 +195,7 @@ class FileSystem(object):
                 return False
 
     def set_extras(self, path, extras, namespace=None):
+        path = os.path.realpath(path)
         if namespace is None:
             namespace = self.namespace
         try:
@@ -193,6 +206,7 @@ class FileSystem(object):
             return False
 
     def get_extras(self, path, extras, namespace=None):
+        path = os.path.realpath(path)
         if namespace is None:
             namespace = self.namespace
         try:
@@ -202,6 +216,7 @@ class FileSystem(object):
             return None
 
     def put(self, path, content, namespace=None):
+        path = os.path.realpath(path)
         if namespace is None:
             namespace = self.namespace
 
@@ -214,24 +229,17 @@ class FileSystem(object):
             d.updated = datetime.now()
             d.size = len(content)
             d.save()
-
             try:
-                filename = six.u(str(d.id))
-                with self.fs.open(filename, "wb") as f:
+                with self.fs.open(six.u(str(d.id)), "wb") as f:
                     f.write(content)
-                if d.size != self.fs.getsize(filename):
-                    raise Exception("Calculated size and file size are different!")
             except Exception as e:
-                # Something wrong happened
-                file_id = six.u(str(d.id))
                 d.delete()
-                if self.fs.exists(file_id):
-                    self.fs.remove(file_id)
                 raise e
         else:
             raise Exception("Path must starts with a slash /")
 
     def list(self, path, namespace=None):
+        path = os.path.realpath(path)
         if namespace is None:
             namespace = self.namespace
 
@@ -240,9 +248,9 @@ class FileSystem(object):
         return [file.name.split("/")[-1] for file in files]
 
     def list_dirs(self, path, namespace=None):
+        path = os.path.realpath(path)
         if namespace is None:
             namespace = self.namespace
-
 
         query = list_dir_query(path)
         if namespace is not None:
@@ -251,6 +259,8 @@ class FileSystem(object):
         return [f["_id"] for f in File.objects.aggregate(*query)]
 
     def rename(self, old_path, new_path, namespace=None):
+        old_path = os.path.realpath(old_path)
+        new_path = os.path.realpath(new_path)
         if namespace is None:
             namespace = self.namespace
 
@@ -263,6 +273,7 @@ class FileSystem(object):
             return False
 
     def attrs(self, path, namespace=None):
+        path = os.path.realpath(path)
         if namespace is None:
             namespace = self.namespace
 
@@ -279,6 +290,7 @@ class FileSystem(object):
             return None
 
     def remove(self, path, namespace=None):
+        path = os.path.realpath(path)
         if namespace is None:
             namespace = self.namespace
         try:
@@ -291,5 +303,16 @@ class FileSystem(object):
 
     def close(self):
         self.fs.close()
+
+    def exists(self, path, namespace=None):
+        path = os.path.realpath(path)
+        if namespace is None:
+            namespace = self.namespace
+
+        try:
+            File.objects.get(name=path, namespace=namespace)
+            return True
+        except DoesNotExist:
+            return False
 
 
