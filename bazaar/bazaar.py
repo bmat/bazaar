@@ -84,7 +84,7 @@ def list_dir_query(path):
         {
             "$match":
             {
-                "name": {'$regex': '^{path}([^\\/]*)/'.format(path=path)}
+                "name": {'$regex': '^{path}\\/'.format(path=re.escape(path))}
             }
         },
         {
@@ -244,19 +244,17 @@ class FileSystem(object):
         if namespace is None:
             namespace = self.namespace
 
-        name = {"$regex": '^{dir}/([^\/]*)$'.format(dir=re.escape(path) if path != "/" else "")}
+        name = {"$regex": '^{dir}\\/(?!.*(\\/))'.format(dir=re.escape(path) if path != "/" else "")}
         files = File.objects(namespace=namespace, name=name)
         return [file.name.split("/")[-1] for file in files]
 
     def list_dirs(self, path, namespace=None):
         path = os.path.realpath(path)
+        query = list_dir_query(path)
         if namespace is None:
             namespace = self.namespace
 
-        query = list_dir_query(path)
-        if namespace is not None:
-            query[0]["$match"]["namespace"] = namespace
-
+        query[0]["$match"]["namespace"] = namespace
         return [f["_id"] for f in File.objects.aggregate(*query)]
 
     def rename(self, old_path, new_path, namespace=None):
