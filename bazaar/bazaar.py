@@ -4,6 +4,7 @@ from fs import open_fs
 from datetime import datetime
 import os
 import six
+import re
 
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
 
@@ -243,7 +244,7 @@ class FileSystem(object):
         if namespace is None:
             namespace = self.namespace
 
-        name = {"$regex": '^{dir}/([^\/]*)$'.format(dir=path if path != "/" else "")}
+        name = {"$regex": '^{dir}/([^\/]*)$'.format(dir=re.escape(path) if path != "/" else "")}
         files = File.objects(namespace=namespace, name=name)
         return [file.name.split("/")[-1] for file in files]
 
