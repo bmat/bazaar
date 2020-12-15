@@ -161,12 +161,14 @@ class FileSystem(object):
 
             try:
                 d = File.objects.get(name=path, namespace=namespace)
+                new_file = False
             except DoesNotExist:
                 if "w" in mode:
                     d = File(name=path, namespace=namespace)
                     d.created = datetime.now()
                     d.updated = datetime.now()
                     d.save()
+                    new_file = True
                 else:
                     raise FileNotFoundError("[Errno 2] No such file or directory: '{filename}'".format(filename=path))
             try:
@@ -175,7 +177,9 @@ class FileSystem(object):
                 file = self.fs.open(six.u(str(d.id)), mode)
                 return BufferWrapper(file, d)
             except Exception as e:
-                d.delete()
+                if new_file:
+                    # Only remove when creating the file, otherwise we could remove a valid entry (eg if database is ok and storate is not)
+                    d.delete()
                 raise e
         else:
             raise Exception("Path must starts with a slash /")
@@ -206,7 +210,7 @@ class FileSystem(object):
         except DoesNotExist:
             return False
 
-    def get_extras(self, path, extras, namespace=None):
+    def get_extras(self, path, namespace=None):
         path = os.path.realpath(path)
         if namespace is None:
             namespace = self.namespace
@@ -224,9 +228,11 @@ class FileSystem(object):
         if path.startswith("/"):
             try:
                 d = File.objects.get(name=path, namespace=namespace)
+                new_file = False
             except DoesNotExist:
                 d = File(name=path, namespace=namespace)
                 d.created = datetime.now()
+                new_file = True
             d.updated = datetime.now()
             d.size = len(content)
             d.save()
@@ -234,7 +240,9 @@ class FileSystem(object):
                 with self.fs.open(six.u(str(d.id)), "wb") as f:
                     f.write(content)
             except Exception as e:
-                d.delete()
+                if new_file:
+                    # Only remove when creating the file, otherwise we could remove a valid entry (eg if database is ok and storate is not)
+                    d.delete()
                 raise e
         else:
             raise Exception("Path must starts with a slash /")
