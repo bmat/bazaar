@@ -1,5 +1,5 @@
 import unittest
-from bazaar.bazaar import File, FileSystem
+from bazaar.bazaar import FileSystem
 import shutil
 import os
 import logging
@@ -19,7 +19,7 @@ class TestFileSystem(unittest.TestCase):
             # The user provided a real mongo
             self.pipelines = True
         self.fs = FileSystem(tmp_dir, db_uri=mongo_uri)
-        File.drop_collection()
+        self.fs.db.drop()
 
     def test_create_file(self):
         content = "This is a test"
