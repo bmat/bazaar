@@ -41,88 +41,6 @@ class BufferWrapper(object):
         else:
             return orig_attr
 
-# Mongo queries for list directories
-
-root = [
-{
-    "$match":
-    {
-        "name": {'$regex': '^([^\\/]*)/'}
-    }
-},
-{
-    "$project" : {
-        "name": {
-            "$split": ["$name", "/"]
-            }
-    }
-},
-{
-    "$match": {
-        'name.2': {"$exists": True}
-    }
-},
-{
-    "$project" : {
-        "name": {
-            "$arrayElemAt": ["$name", 1]
-            }
-    }
-},
-{
-    "$group": {
-        "_id": "$name"
-    }
-}
-]
-
-def list_dir_query(path):
-    if path == "/":
-        return root
-    else:
-        return [
-        {
-            "$match":
-            {
-                "name": {'$regex': '^{path}\\/'.format(path=re.escape(path))}
-            }
-        },
-        {
-            "$project" : {
-                "name": {
-                    "$split": ["$name", path]
-                    }
-            }
-        }
-        ,
-        {
-            "$project" : {
-                "name": {
-                    "$split": [{"$arrayElemAt": ["$name", 1]}, "/"]
-                    }
-            }
-        },
-        {
-        "$match": {
-            'name.2': {"$exists": True}
-        }
-        }
-        ,
-        {
-            "$project" : {
-                "name": {
-                    "$arrayElemAt": ["$name", 1]
-                    }
-            }
-        },
-        {
-            "$group": {
-                "_id": "$name"
-            }
-        }
-
-        ]
-
 
 class FileSystem(object):
 
@@ -188,7 +106,7 @@ class FileSystem(object):
         path = os.path.realpath(path)
         try:
             # Destination should not exists
-            d = File.objects.get(name=path, namespace=to_namespace)
+            File.objects.get(name=path, namespace=to_namespace)
             return False
         except DoesNotExist:
             try:
@@ -196,6 +114,7 @@ class FileSystem(object):
                 d = File.objects.get(name=path, namespace=from_namespace)
                 d.namespace = to_namespace
                 d.save()
+                return True
             except DoesNotExist:
                 return False
 
@@ -248,22 +167,44 @@ class FileSystem(object):
             raise Exception("Path must starts with a slash /")
 
     def list(self, path, namespace=None):
-        path = os.path.realpath(path)
+        path = self.sanitize_path(path)
         if namespace is None:
             namespace = self.namespace
 
-        name = {"$regex": '^{dir}\\/(?!.*(\\/))'.format(dir=re.escape(path) if path != "/" else "")}
-        files = File.objects(namespace=namespace, name=name)
-        return [file.name.split("/")[-1] for file in files]
+        # We search for paths that starts with the provided path (directory), the something without a slash (filename)
+        # and the end, because if we have another slash this is a directory
+        files = File._get_collection().find({"namespace": namespace, "name": {'$regex': f'^{re.escape(path)}[^/]+$'}})
+        # To make it faster, a raw mongo query
+        return [file["name"].rsplit("/", 1)[-1] for file in files]
+
+    def sanitize_path(self, path):
+        path = os.path.realpath(path)
+
+        if not path.endswith("/"):
+            path += "/"
+
+        if not path.startswith("/"):
+            path = "/" + path
+
+        return path
 
     def list_dirs(self, path, namespace=None):
-        path = os.path.realpath(path)
-        query = list_dir_query(path)
+        path = self.sanitize_path(path)
+        # query = list_dir_query(path)
         if namespace is None:
             namespace = self.namespace
 
-        query[0]["$match"]["namespace"] = namespace
-        return [f["_id"] for f in File.objects.aggregate(*query)]
+        pipeline = [
+            # 1. Get things that are: path/{dir}/{something} just to be sure that {dir} is a directory and not a file
+            {"$match": {'namespace': namespace, 'name': {'$regex': f'^{re.escape(path)}([^/]+/)'}}},
+            # 2. Remove the provided path from the path. path/dir1/file -> dir1/file
+            {"$project": {'name': {"$substr": ["$name", len(path), {"$strLenCP": "$name"}]}}},
+            # 3. Split a get the first element. dir1/file -> dir. It also works for dir1/subdir/file -> dir1
+            {"$project": {'name': {"$arrayElemAt": [{"$split": ["$name", "/"]}, 0]}}},
+            # 4. Group to avoid duplicates (a subdirectory with several files will cause these duplicates)
+            {"$group": {"_id": "$name"}}
+        ]
+        return [f["_id"] for f in File.objects.aggregate(*pipeline)]
 
     def rename(self, old_path, new_path, namespace=None):
         old_path = os.path.realpath(old_path)
