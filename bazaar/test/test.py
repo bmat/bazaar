@@ -2,7 +2,7 @@ import unittest
 from bazaar.bazaar import File, FileSystem
 import shutil
 import os
-
+import logging
 
 class TestFileSystem(unittest.TestCase):
     def setUp(self):
@@ -11,7 +11,14 @@ class TestFileSystem(unittest.TestCase):
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
         os.mkdir(tmp_dir)
-        self.fs = FileSystem(tmp_dir, db_uri="mongomock://localhost")
+        mongo_uri = os.environ.get('MONGO_URI', None)
+        if mongo_uri is None:
+            self.pipelines = False
+            mongo_uri = 'mongomock://localhost'
+        else:
+            # The user provided a real mongo
+            self.pipelines = True
+        self.fs = FileSystem(tmp_dir, db_uri=mongo_uri)
         File.drop_collection()
 
     def test_create_file(self):
@@ -54,6 +61,36 @@ class TestFileSystem(unittest.TestCase):
         # A third level
         self.fs.put(path="/dir1/subdir/prettyfile", content="a".encode())
         self.assertListEqual(["prettyfile"], self.fs.list("/dir1/subdir"))
+
+        # With weird names
+        self.fs.put(path="/dir11/./prettyfile", content="a".encode())
+        self.assertListEqual(["prettyfile"], self.fs.list("/dir11/."))
+
+        self.fs.put(path="/dir22/$dir/prettyfile", content="a".encode())
+        self.assertListEqual(["prettyfile"], self.fs.list("/dir22/$dir"))
+
+    def test_list_file_multilevel(self):
+        # multilevel
+        self.fs.put(path="/fichero1", content=b"a")
+        self.fs.put(path="/dir1/fichero1.1", content=b"a")
+        self.fs.put(path="/dir1/fichero1.2", content=b"a")
+        self.fs.put(path="/dir2/fichero2.1", content=b"a")
+        self.fs.put(path="/dir1/subdir1/a", content=b"a")
+        self.fs.put(path="/dir1/subdir1/b", content=b"a")
+        self.fs.put(path="/dir1/subdir1/subidr2/c", content=b"a")
+        self.fs.put(path="/dir1/subdir2/pepe/cp", content=b"a")
+        self.fs.put(path="/this/is/test/file", content=b"a")
+
+        self.assertListEqual(["fichero1"], self.fs.list("/"))
+        self.assertListEqual(["fichero1.1", "fichero1.2"], self.fs.list("/dir1"))
+        self.assertListEqual(["fichero2.1"], self.fs.list("/dir2"))
+
+        self.assertListEqual(["a", "b"], self.fs.list("/dir1/subdir1"))
+
+        self.assertListEqual(["c"], self.fs.list("/dir1/subdir1/subidr2"))
+        self.assertListEqual(["cp"], self.fs.list("/dir1/subdir2/pepe"))
+        self.assertListEqual(["file"], self.fs.list("/this/is/test"))
+
         
     def test_exists(self):
         namespace = "test"
@@ -66,17 +103,67 @@ class TestFileSystem(unittest.TestCase):
 
     # Mongomock aggregate does not work
     def test_directories(self):
-        return
-        self.assertEqual([], self.fs.list("/"))
+
+        if self.pipelines:
+            self.assertEqual([], self.fs.list("/"))
+            self.fs.put(path="/first", content="a".encode())
+            self.fs.put(path="/dir1/file", content="a".encode())
+            self.fs.put(path="/dir1/secondfile", content="a".encode())
+            self.fs.put(path="/dir1/subdir/prettyfile", content="a".encode())
+            self.fs.put(path="/dir1/subdir2/prettyfile", content="a".encode())
+
+            self.assertListEqual(["dir1"], self.fs.list_dirs("/"))
+            self.assertSetEqual({"subdir", "subdir2"}, set(self.fs.list_dirs("/dir1")))
+        else:
+            logging.warning("Not running directories tests because mongomock does not support pipelines")
+
+    def test_directories_multilevel(self):
+        if self.pipelines:
+            # multilevel
+            self.fs.put(path="/fichero1", content=b"a")
+            self.fs.put(path="/dir1/fichero1.1", content=b"a")
+            self.fs.put(path="/dir1/fichero1.2", content=b"a")
+            self.fs.put(path="/dir2/fichero2.1", content=b"a")
+            self.fs.put(path="/dir1/subdir1/a", content=b"a")
+            self.fs.put(path="/dir1/subdir1/b", content=b"a")
+            self.fs.put(path="/dir1/subdir1/subidr2/c", content=b"a")
+            self.fs.put(path="/dir1/subdir2/pepe/cp", content=b"a")
+            self.fs.put(path="/this/is/test/file", content=b"a")
+
+            # assertCountEqual not only counts, is like assertEqual but ignoring the order of the elements in the array
+            self.assertCountEqual(["dir1", "dir2", "this"], self.fs.list_dirs("/"))
+            self.assertCountEqual(["subdir1", "subdir2"], self.fs.list_dirs("/dir1"))
+            self.assertCountEqual([], self.fs.list_dirs("/dir2"))
+            self.assertCountEqual(["subidr2"], self.fs.list_dirs("/dir1/subdir1"))
+            self.assertCountEqual([], self.fs.list_dirs("/dir1/subdir1/subidr2"))
+            self.assertCountEqual(["pepe"], self.fs.list_dirs("/dir1/subdir2"))
+            self.assertCountEqual(["test"], self.fs.list_dirs("/this/is"))
+        else:
+            logging.warning("Not running directories tests because mongomock does not support pipelines")
+
+    def test_extras(self):
         self.fs.put(path="/first", content="a".encode())
-        self.fs.put(path="/dir1/file", content="a".encode())
-        self.fs.put(path="/dir1/secondfile", content="a".encode())
-        self.fs.put(path="/dir1/subdir/prettyfile", content="a".encode())
-        self.fs.put(path="/dir1/subdir2/prettyfile", content="a".encode())
+        self.assertEqual({}, self.fs.get_extras(path="/first"))
+        self.fs.set_extras(path="/first", extras={"foo": "bar"})
+        self.assertEqual({"foo": "bar"}, self.fs.get_extras(path="/first"))
 
-        self.assertListEqual(["dir1"], self.fs.list_dirs("/"))
-        self.assertSetEqual({"subdir", "subdir2"}, set(self.fs.list_dirs("/dir1")))
 
+    def test_change_namespace(self):
+        namespace = "test_1"
+        namespace_2 = "test_2"
+
+        # normal case
+        self.fs.put(namespace=namespace, path="/original", content="a".encode())
+        self.assertTrue(self.fs.exists(path="/original", namespace=namespace))
+        self.assertFalse(self.fs.exists(path="/original", namespace=namespace_2))
+        self.assertTrue(self.fs.change_namespace(path="/original", from_namespace=namespace, to_namespace=namespace_2))
+        self.assertFalse(self.fs.exists(path="/original", namespace=namespace))
+        self.assertTrue(self.fs.exists(path="/original", namespace=namespace_2))
+
+        # wrong cases
+        self.assertFalse(self.fs.change_namespace(path="/not_exists", from_namespace=namespace, to_namespace=namespace_2))
+        self.fs.put(namespace=namespace, path="/original", content="a".encode())
+        self.assertFalse(self.fs.change_namespace(path="/original", from_namespace=namespace, to_namespace=namespace_2))
 
 if __name__ == '__main__':
     unittest.main()
