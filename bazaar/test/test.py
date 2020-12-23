@@ -11,14 +11,7 @@ class TestFileSystem(unittest.TestCase):
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
         os.mkdir(tmp_dir)
-        mongo_uri = os.environ.get('MONGO_URI', None)
-        if mongo_uri is None:
-            self.pipelines = False
-            mongo_uri = 'mongomock://localhost'
-        else:
-            # The user provided a real mongo
-            self.pipelines = True
-        self.fs = FileSystem(tmp_dir, db_uri=mongo_uri)
+        self.fs = FileSystem(tmp_dir, db_uri="mongodb://localhost/bazaar_test")
         self.fs.db.drop()
 
     def test_create_file(self):
@@ -103,43 +96,36 @@ class TestFileSystem(unittest.TestCase):
 
     # Mongomock aggregate does not work
     def test_directories(self):
+        self.assertEqual([], self.fs.list("/"))
+        self.fs.put(path="/first", content="a".encode())
+        self.fs.put(path="/dir1/file", content="a".encode())
+        self.fs.put(path="/dir1/secondfile", content="a".encode())
+        self.fs.put(path="/dir1/subdir/prettyfile", content="a".encode())
+        self.fs.put(path="/dir1/subdir2/prettyfile", content="a".encode())
 
-        if self.pipelines:
-            self.assertEqual([], self.fs.list("/"))
-            self.fs.put(path="/first", content="a".encode())
-            self.fs.put(path="/dir1/file", content="a".encode())
-            self.fs.put(path="/dir1/secondfile", content="a".encode())
-            self.fs.put(path="/dir1/subdir/prettyfile", content="a".encode())
-            self.fs.put(path="/dir1/subdir2/prettyfile", content="a".encode())
-
-            self.assertListEqual(["dir1"], self.fs.list_dirs("/"))
-            self.assertSetEqual({"subdir", "subdir2"}, set(self.fs.list_dirs("/dir1")))
-        else:
-            logging.warning("Not running directories tests because mongomock does not support pipelines")
+        self.assertListEqual(["dir1"], self.fs.list_dirs("/"))
+        self.assertSetEqual({"subdir", "subdir2"}, set(self.fs.list_dirs("/dir1")))
 
     def test_directories_multilevel(self):
-        if self.pipelines:
-            # multilevel
-            self.fs.put(path="/fichero1", content=b"a")
-            self.fs.put(path="/dir1/fichero1.1", content=b"a")
-            self.fs.put(path="/dir1/fichero1.2", content=b"a")
-            self.fs.put(path="/dir2/fichero2.1", content=b"a")
-            self.fs.put(path="/dir1/subdir1/a", content=b"a")
-            self.fs.put(path="/dir1/subdir1/b", content=b"a")
-            self.fs.put(path="/dir1/subdir1/subidr2/c", content=b"a")
-            self.fs.put(path="/dir1/subdir2/pepe/cp", content=b"a")
-            self.fs.put(path="/this/is/test/file", content=b"a")
+        # multilevel
+        self.fs.put(path="/fichero1", content=b"a")
+        self.fs.put(path="/dir1/fichero1.1", content=b"a")
+        self.fs.put(path="/dir1/fichero1.2", content=b"a")
+        self.fs.put(path="/dir2/fichero2.1", content=b"a")
+        self.fs.put(path="/dir1/subdir1/a", content=b"a")
+        self.fs.put(path="/dir1/subdir1/b", content=b"a")
+        self.fs.put(path="/dir1/subdir1/subidr2/c", content=b"a")
+        self.fs.put(path="/dir1/subdir2/pepe/cp", content=b"a")
+        self.fs.put(path="/this/is/test/file", content=b"a")
 
-            # assertCountEqual not only counts, is like assertEqual but ignoring the order of the elements in the array
-            self.assertCountEqual(["dir1", "dir2", "this"], self.fs.list_dirs("/"))
-            self.assertCountEqual(["subdir1", "subdir2"], self.fs.list_dirs("/dir1"))
-            self.assertCountEqual([], self.fs.list_dirs("/dir2"))
-            self.assertCountEqual(["subidr2"], self.fs.list_dirs("/dir1/subdir1"))
-            self.assertCountEqual([], self.fs.list_dirs("/dir1/subdir1/subidr2"))
-            self.assertCountEqual(["pepe"], self.fs.list_dirs("/dir1/subdir2"))
-            self.assertCountEqual(["test"], self.fs.list_dirs("/this/is"))
-        else:
-            logging.warning("Not running directories tests because mongomock does not support pipelines")
+        # assertCountEqual not only counts, is like assertEqual but ignoring the order of the elements in the array
+        self.assertCountEqual(["dir1", "dir2", "this"], self.fs.list_dirs("/"))
+        self.assertCountEqual(["subdir1", "subdir2"], self.fs.list_dirs("/dir1"))
+        self.assertCountEqual([], self.fs.list_dirs("/dir2"))
+        self.assertCountEqual(["subidr2"], self.fs.list_dirs("/dir1/subdir1"))
+        self.assertCountEqual([], self.fs.list_dirs("/dir1/subdir1/subidr2"))
+        self.assertCountEqual(["pepe"], self.fs.list_dirs("/dir1/subdir2"))
+        self.assertCountEqual(["test"], self.fs.list_dirs("/this/is"))
 
     def test_extras(self):
         self.fs.put(path="/first", content="a".encode())

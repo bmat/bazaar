@@ -1,10 +1,11 @@
 language: python
+services: mongodb
 python:
 - '3.6'
 env:
   global:
   - PYTHONPATH="."
-script: pip install mongomock && python bazaar/test/test.py
+script: python bazaar/test/test.py
 deploy:
   provider: pypi
   user: bmat
