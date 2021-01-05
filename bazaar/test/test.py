@@ -1,8 +1,15 @@
 import unittest
-from bazaar.bazaar import FileSystem
 import shutil
 import os
 import logging
+
+try:
+    from bazaar.bazaar import FileSystem
+except ImportError:
+    import sys
+    sys.path.insert(1, '..')
+    from bazaar.bazaar import FileSystem
+
 
 class TestFileSystem(unittest.TestCase):
     def setUp(self):
