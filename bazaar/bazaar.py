@@ -7,6 +7,9 @@ import re
 
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
 
+FILE_NEEDED_FIELDS = ('_id', 'name', 'namespace')
+FILE_PROJECT = {f: -1 for f in FILE_NEEDED_FIELDS}
+
 
 # class File(Document):
 #     created = DateTimeField()
@@ -77,7 +80,7 @@ class FileSystem(object):
         if namespace is None:
             namespace = self.namespace
 
-        d = self.db.find_one({"name": path, "namespace": namespace}, {"_id": 1})
+        d = self.db.find_one({"name": path, "namespace": namespace}, FILE_PROJECT)
         # Database information
         if d is not None:
             filename = str(d["_id"])
