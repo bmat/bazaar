@@ -33,7 +33,7 @@ class BufferWrapper(object):
                     file_size = self.wrapped_object.tell()
                     r = self.db.update_one({"name": self.file_data["name"], "namespace": self.file_data["namespace"]}, {"$set": {"size": file_size}})
                     # In case source does not exist, matched_count is 0
-                    if r.matched_count > 0:
+                    if r.matched_count == 0:
                         raise Exception("Cannot update size of a non existent file")
                 result = orig_attr(*args, **kwargs)
                 if result == self.wrapped_object:
