@@ -151,5 +151,31 @@ class TestFileSystem(unittest.TestCase):
         self.fs.put(namespace=namespace, path="/original", content="a".encode())
         self.assertFalse(self.fs.change_namespace(path="/original", from_namespace=namespace, to_namespace=namespace_2))
 
+    def assert_no_error(self, function, *args, **kwargs):
+        raised = False
+        try:
+            function(*args, **kwargs)
+        except:
+            raised = True
+        self.assertFalse(raised)
+
+    def test_open_create(self):
+        self.assert_no_error(self._open_create_file)
+
+    def test_open_existing(self):
+        self.assert_no_error(self._open_existing_file)
+
+    def _open_create_file(self):
+        example_file = self.fs.open('example.txt', 'w', namespace='example-namespace')
+        example_file.close()
+
+    def _open_existing_file(self):
+        path = 'example.txt'
+        namespace = 'example-namespace'
+        self.fs.put(path, b'Hello world!', namespace=namespace)
+        example_file = self.fs.open(path, 'r', namespace=namespace)
+        example_file.close()
+
+
 if __name__ == '__main__':
     unittest.main()
