@@ -87,14 +87,16 @@ class FileSystem(object):
             new_file = False
         else:
             if "w" in mode:
-                insert_info = self.db.insert_one({
+                d = {
                     "name": path,
                     "namespace": namespace,
                     "created": datetime.utcnow(),
                     "updated": datetime.utcnow()
-                })
+                }
+                insert_info = self.db.insert_one(d)
                 filename = str(insert_info.inserted_id)
                 new_file = True
+                d['_id'] = insert_info.inserted_id
             else:
                 raise FileNotFoundError("[Errno 2] No such file or directory: '{filename}'".format(filename=path))
 
