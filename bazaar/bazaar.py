@@ -7,6 +7,9 @@ import re
 
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
 
+FILE_NEEDED_FIELDS = ('_id', 'name', 'namespace')
+FILE_PROJECT = {f: -1 for f in FILE_NEEDED_FIELDS}
+
 
 # class File(Document):
 #     created = DateTimeField()
@@ -33,7 +36,7 @@ class BufferWrapper(object):
                     file_size = self.wrapped_object.tell()
                     r = self.db.update_one({"name": self.file_data["name"], "namespace": self.file_data["namespace"]}, {"$set": {"size": file_size}})
                     # In case source does not exist, matched_count is 0
-                    if r.matched_count > 0:
+                    if r.matched_count == 0:
                         raise Exception("Cannot update size of a non existent file")
                 result = orig_attr(*args, **kwargs)
                 if result == self.wrapped_object:
@@ -77,21 +80,23 @@ class FileSystem(object):
         if namespace is None:
             namespace = self.namespace
 
-        d = self.db.find_one({"name": path, "namespace": namespace}, {"_id": 1})
+        d = self.db.find_one({"name": path, "namespace": namespace}, FILE_PROJECT)
         # Database information
         if d is not None:
             filename = str(d["_id"])
             new_file = False
         else:
             if "w" in mode:
-                insert_info = self.db.insert_one({
+                d = {
                     "name": path,
                     "namespace": namespace,
                     "created": datetime.utcnow(),
                     "updated": datetime.utcnow()
-                })
+                }
+                insert_info = self.db.insert_one(d)
                 filename = str(insert_info.inserted_id)
                 new_file = True
+                d['_id'] = insert_info.inserted_id
             else:
                 raise FileNotFoundError("[Errno 2] No such file or directory: '{filename}'".format(filename=path))
 
