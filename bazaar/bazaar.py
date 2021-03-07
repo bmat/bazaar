@@ -47,6 +47,16 @@ class BufferWrapper(object):
         else:
             return orig_attr
 
+    # These following two methods can't be dynamically queried through the __getattr__ method.
+    def __enter__(self, *args, **kwargs):
+        """Needed to implement the context handler - with FileSystem.open() as... -."""
+        result = self.wrapped_object.__enter__(*args, **kwargs)
+        return self if result == self.wrapped_object else result
+
+    def __exit__(self, *args, **kwargs):
+        """Needed to implement the context handler - with FileSystem.open() as... -."""
+        return self.wrapped_object.__exit__(*args, **kwargs)
+
 
 class FileSystem(object):
 
