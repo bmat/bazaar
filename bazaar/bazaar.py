@@ -7,8 +7,8 @@ import re
 
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
 
-FILE_NEEDED_FIELDS = ('_id', 'name', 'namespace')
-FILE_PROJECT = {f: -1 for f in FILE_NEEDED_FIELDS}
+FILE_NEEDED_FIELDS = {'_id', 'name', 'namespace'}
+FILE_PROJECT = {f: True for f in FILE_NEEDED_FIELDS}
 
 
 # class File(Document):
