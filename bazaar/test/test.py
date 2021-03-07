@@ -207,9 +207,18 @@ class TestBufferWrapper(unittest.TestCase):
         self.db = self.mongo_client.get_default_database().file
         self.db.drop()
 
+    def create_test_file(self):
+        test_file_data = self.test_file_dict.copy()
+        test_file_data['size'] = 0
+        self.db.insert_one(test_file_data)
+        return test_file_data
+
     def wrapper_factory(self, wrapped_object=None, file_data=None, default_mode='r'):
         wrapped_object = wrapped_object or io.TextIOWrapper(io.BytesIO())
-        wrapped_object.mode = getattr(wrapped_object, 'mode', None) or default_mode
+        try:
+            wrapped_object.mode = getattr(wrapped_object, 'mode', None) or default_mode
+        except AttributeError:  # BufferedWriter and BufferedReader mode can't be written
+            pass
         file_data = file_data or {'name': 'test_file', 'namespace': 'test-namespace'}
         return BufferWrapper(wrapped_object=wrapped_object, file_data=file_data, db=self.db)
 
@@ -218,25 +227,28 @@ class TestBufferWrapper(unittest.TestCase):
         with wrapper as context_handled:
             self.assertEqual(wrapper, context_handled)
 
-    def test_can_mode_change_size(self):
+    def test_can_mode_change_size_read(self):
         wrapper = self.wrapper_factory(default_mode='r')
         self.assertFalse(wrapper.can_mode_change_size())
 
+    def test_can_mode_change_size_write(self):
         for mode in {'w', 'w+', 'a', 'x'}:
             wrapper = self.wrapper_factory(default_mode=mode)
             self.assertTrue(wrapper.can_mode_change_size())
+
+    def test_can_mode_change_size_buffered_reader(self):
+        wrapper = self.wrapper_factory(wrapped_object=io.BufferedReader(io.BytesIO()))
+        self.assertFalse(wrapper.can_mode_change_size())
+
+    def test_can_mode_change_size_buffered_writer(self):
+        wrapper = self.wrapper_factory(wrapped_object=io.BufferedWriter(io.BytesIO()))
+        self.assertTrue(wrapper.can_mode_change_size())
 
     def test_update_file_size_non_existent(self):
         wrapper = self.wrapper_factory()
         with self.assertRaises(Exception) as e:
             wrapper.update_file_size(new_size=10)
         self.assertEqual(str(e.exception), 'Cannot update size of a non existent file')
-
-    def create_test_file(self):
-        test_file_data = self.test_file_dict.copy()
-        test_file_data['size'] = 0
-        self.db.insert_one(test_file_data)
-        return test_file_data
 
     def test_update_file_size_existent(self):
         file_data = self.create_test_file()
