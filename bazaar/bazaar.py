@@ -60,13 +60,18 @@ class BufferWrapper(object):
     def update_file_size_if_needed(self) -> bool:
         if self.can_mode_change_size():
             new_size = self.wrapped_object.tell()
-            if self.file_data['size'] != new_size:
+            if self.file_data.get('size') != new_size:
                 self.update_file_size(new_size)
                 return True
         return False
 
     def can_mode_change_size(self):
-        return self.wrapped_object.mode[0] in FILE_SIZE_CHANGING_MODES
+        mode = getattr(self.wrapped_object, 'mode', None)
+        if mode is not None:
+            can_change_size = self.wrapped_object.mode[0] in FILE_SIZE_CHANGING_MODES
+        else:
+            can_change_size = isinstance(self.wrapped_object, io.BufferedWriter)
+        return can_change_size
 
     def update_file_size(self, new_size: int):
         update_result = self.db.update_one(
