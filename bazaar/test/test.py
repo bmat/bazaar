@@ -1,14 +1,20 @@
+import io
 import unittest
 import shutil
 import os
 import logging
 
+from pymongo import MongoClient
+
 try:
-    from bazaar.bazaar import FileSystem
+    from bazaar.bazaar import BufferWrapper, FileSystem
 except ImportError:
     import sys
-    sys.path.insert(1, '..')
-    from bazaar.bazaar import FileSystem
+    sys.path.insert(1, '.')
+    from bazaar.bazaar import BufferWrapper, FileSystem
+
+
+TEST_MONGO_URI = "mongodb://localhost/bazaar_test"
 
 
 class TestFileSystem(unittest.TestCase):
@@ -18,7 +24,7 @@ class TestFileSystem(unittest.TestCase):
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
         os.mkdir(tmp_dir)
-        self.fs = FileSystem(tmp_dir, db_uri="mongodb://localhost/bazaar_test")
+        self.fs = FileSystem(tmp_dir, db_uri=TEST_MONGO_URI)
         self.fs.db.drop()
 
     def test_create_file(self):
@@ -177,11 +183,112 @@ class TestFileSystem(unittest.TestCase):
         example_file.close()
 
     def _open_existing_file(self):
+        path, namespace = self._create_hello_world_file()
+        example_file = self.fs.open(path, 'r', namespace=namespace)
+        example_file.close()
+
+    def test_open_context_handler(self):
+        path, namespace = self._create_hello_world_file()
+        with self.fs.open(path, 'r', namespace=namespace) as hello_world_file:
+            self.assertEqual(hello_world_file.read(), 'Hello world!')
+
+    def _create_hello_world_file(self):
         path = 'example.txt'
         namespace = 'example-namespace'
         self.fs.put(path, b'Hello world!', namespace=namespace)
-        example_file = self.fs.open(path, 'r', namespace=namespace)
-        example_file.close()
+        return path, namespace
+
+
+class TestBufferWrapper(unittest.TestCase):
+    test_file_dict = {'name': 'test_file', 'namespace': 'test-namespace'}
+
+    def setUp(self):
+        self.mongo_client = MongoClient(host=TEST_MONGO_URI)
+        self.db = self.mongo_client.get_default_database().file
+        self.db.drop()
+
+    def create_test_file(self):
+        test_file_data = self.test_file_dict.copy()
+        test_file_data['size'] = 0
+        self.db.insert_one(test_file_data)
+        return test_file_data
+
+    def wrapper_factory(self, wrapped_object=None, file_data=None, default_mode='r'):
+        wrapped_object = wrapped_object or io.TextIOWrapper(io.BytesIO())
+        try:
+            wrapped_object.mode = getattr(wrapped_object, 'mode', None) or default_mode
+        except AttributeError:  # BufferedWriter and BufferedReader mode can't be written
+            pass
+        file_data = file_data or {'name': 'test_file', 'namespace': 'test-namespace'}
+        return BufferWrapper(wrapped_object=wrapped_object, file_data=file_data, db=self.db)
+
+    def test_context_handler(self):
+        wrapper = self.wrapper_factory()
+        with wrapper as context_handled:
+            self.assertEqual(wrapper, context_handled)
+
+    def test_can_mode_change_size_read(self):
+        wrapper = self.wrapper_factory(default_mode='r')
+        self.assertFalse(wrapper.can_mode_change_size())
+
+    def test_can_mode_change_size_write(self):
+        for mode in {'w', 'w+', 'a', 'x'}:
+            wrapper = self.wrapper_factory(default_mode=mode)
+            self.assertTrue(wrapper.can_mode_change_size())
+
+    def test_can_mode_change_size_buffered_reader(self):
+        wrapper = self.wrapper_factory(wrapped_object=io.BufferedReader(io.BytesIO()))
+        self.assertFalse(wrapper.can_mode_change_size())
+
+    def test_can_mode_change_size_buffered_writer(self):
+        wrapper = self.wrapper_factory(wrapped_object=io.BufferedWriter(io.BytesIO()))
+        self.assertTrue(wrapper.can_mode_change_size())
+
+    def test_update_file_size_non_existent(self):
+        wrapper = self.wrapper_factory()
+        with self.assertRaises(Exception) as e:
+            wrapper.update_file_size(new_size=10)
+        self.assertEqual(str(e.exception), 'Cannot update size of a non existent file')
+
+    def test_update_file_size_existent(self):
+        file_data = self.create_test_file()
+        wrapper = self.wrapper_factory(file_data=file_data)
+        self.assertEqual(wrapper.file_data['size'], 0)
+
+        wrapper.update_file_size(10)
+        updated_file_data = self.db.find_one(self.test_file_dict)
+        self.assertEqual(updated_file_data['size'], 10)
+
+    def test_update_file_size_if_needed_read_mode(self):
+        file_data = self.create_test_file()
+        wrapper = self.wrapper_factory(file_data=file_data)
+        self.assertFalse(wrapper.update_file_size_if_needed())
+
+    def test_update_file_size_if_needed_write_mode_no_size_change(self):
+        file_data = self.create_test_file()
+        wrapper = self.wrapper_factory(file_data=file_data, default_mode='w')
+        self.assertFalse(wrapper.update_file_size_if_needed())
+
+    def test_update_file_size_if_needed_write_mode_size_change(self):
+        file_data = self.create_test_file()
+        wrapper = self.wrapper_factory(file_data=file_data, default_mode='w')
+        wrapper.wrapped_object.write('Hello world!')
+        self.assertTrue(wrapper.update_file_size_if_needed())
+
+    def test_close_updates_file_size(self):
+        file_data = self.create_test_file()
+        wrapper = self.wrapper_factory(file_data=file_data, default_mode='w')
+        new_size = wrapper.wrapped_object.write('Hello world!')
+        wrapper.close()
+        updated_file_data = self.db.find_one(self.test_file_dict)
+        self.assertEqual(updated_file_data['size'], new_size)
+
+    def test_context_handler_updates_file_size(self):
+        file_data = self.create_test_file()
+        with self.wrapper_factory(file_data=file_data, default_mode='w') as wrapper:
+            new_size = wrapper.wrapped_object.write('Hello world!')
+        updated_file_data = self.db.find_one(self.test_file_dict)
+        self.assertEqual(updated_file_data['size'], new_size)
 
 
 if __name__ == '__main__':

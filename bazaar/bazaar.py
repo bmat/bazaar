@@ -2,13 +2,16 @@ from pymongo import MongoClient
 from collections import namedtuple
 from fs import open_fs
 from datetime import datetime
+import io
 import os
 import re
 
+
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
 
-FILE_NEEDED_FIELDS = ('_id', 'name', 'namespace')
-FILE_PROJECT = {f: -1 for f in FILE_NEEDED_FIELDS}
+FILE_NEEDED_FIELDS = {'_id', 'name', 'namespace', 'size'}
+FILE_PROJECT = {f: True for f in FILE_NEEDED_FIELDS}
+FILE_SIZE_CHANGING_MODES = {'w', 'a', 'x'}
 
 
 # class File(Document):
@@ -33,11 +36,7 @@ class BufferWrapper(object):
         if callable(orig_attr):
             def hooked(*args, **kwargs):
                 if attr == "close":
-                    file_size = self.wrapped_object.tell()
-                    r = self.db.update_one({"name": self.file_data["name"], "namespace": self.file_data["namespace"]}, {"$set": {"size": file_size}})
-                    # In case source does not exist, matched_count is 0
-                    if r.matched_count == 0:
-                        raise Exception("Cannot update size of a non existent file")
+                    self.update_file_size_if_needed()
                 result = orig_attr(*args, **kwargs)
                 if result == self.wrapped_object:
                     return self
@@ -46,6 +45,42 @@ class BufferWrapper(object):
             return hooked
         else:
             return orig_attr
+
+    # These following two methods can't be dynamically queried through the __getattr__ method.
+    def __enter__(self, *args, **kwargs):
+        """Needed to implement the context handler - with FileSystem.open() as... -."""
+        result = self.wrapped_object.__enter__(*args, **kwargs)
+        return self if result == self.wrapped_object else result
+
+    def __exit__(self, *args, **kwargs):
+        """Needed to implement the context handler - with FileSystem.open() as... -."""
+        self.update_file_size_if_needed()
+        return self.wrapped_object.__exit__(*args, **kwargs)
+
+    def update_file_size_if_needed(self) -> bool:
+        if self.can_mode_change_size():
+            new_size = self.wrapped_object.tell()
+            if self.file_data.get('size') != new_size:
+                self.update_file_size(new_size)
+                return True
+        return False
+
+    def can_mode_change_size(self):
+        mode = getattr(self.wrapped_object, 'mode', None)
+        if mode is not None:
+            can_change_size = self.wrapped_object.mode[0] in FILE_SIZE_CHANGING_MODES
+        else:
+            can_change_size = isinstance(self.wrapped_object, io.BufferedWriter)
+        return can_change_size
+
+    def update_file_size(self, new_size: int):
+        update_result = self.db.update_one(
+            {"name": self.file_data["name"], "namespace": self.file_data["namespace"]},
+            {"$set": {"size": new_size}}
+        )
+        # In case source does not exist, matched_count is 0
+        if update_result.matched_count == 0:
+            raise Exception("Cannot update size of a non existent file")
 
 
 class FileSystem(object):
