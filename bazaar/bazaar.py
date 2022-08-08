@@ -1,3 +1,6 @@
+from typing import Optional
+
+import mongomock
 from pymongo import MongoClient
 from collections import namedtuple
 from fs import open_fs
@@ -85,19 +88,21 @@ class BufferWrapper(object):
 
 class FileSystem(object):
 
-    def __init__(self, storage_uri=None, db_uri="mongodb://localhost/bazaar", namespace=""):
+    def __init__(self, storage_uri=None, db_uri="mongodb://localhost/bazaar", namespace="", use_mongomock=False):
         if storage_uri is None:
             storage_uri = "bazaar"
             if not os.path.exists(storage_uri):
                 os.mkdir(storage_uri)
 
-        if db_uri is None:
+        if use_mongomock:
+            self.mongo = mongomock.MongoClient(db_uri)
+        elif db_uri is None:
             self.mongo = MongoClient()
         else:
             self.mongo = MongoClient(host=db_uri)
 
         self.fs = open_fs(storage_uri)
-        self.db = self.mongo.get_default_database().file
+        self.db = self.mongo.get_database().file
         self.namespace = namespace
 
     def get(self, path, namespace=None):
@@ -295,3 +300,14 @@ class FileSystem(object):
             namespace = self.namespace
 
         return self.db.find_one({"name": path, "namespace": namespace}, {"_id": 1}) is not None
+
+    def get_id(self, path, namespace=None) -> Optional[str]:
+        path = self.sanitize_path(path, False)
+        if namespace is None:
+            namespace = self.namespace
+
+        db_object = self.db.find_one({"name": path, "namespace": namespace}, {"_id": 1})
+        if db_object is not None:
+            return db_object["_id"]
+        return None
+

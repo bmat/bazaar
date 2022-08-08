@@ -1,10 +1,10 @@
 import io
-import unittest
-import shutil
 import os
-import logging
+import shutil
+import unittest
+from distutils.util import strtobool
 
-from pymongo import MongoClient
+import mongomock
 
 try:
     from bazaar.bazaar import BufferWrapper, FileSystem
@@ -13,18 +13,21 @@ except ImportError:
     sys.path.insert(1, '.')
     from bazaar.bazaar import BufferWrapper, FileSystem
 
-
 TEST_MONGO_URI = "mongodb://localhost/bazaar_test"
+
+# not all tests pass with mongomock
+# can optionally set env variable to use mongomock instead of a db installed locally
+USE_MONGOMOCK = bool(strtobool(os.getenv("USE_MONGOMOCK", "False")))
 
 
 class TestFileSystem(unittest.TestCase):
     def setUp(self):
 
-        tmp_dir = "/tmp/test"
-        if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir)
-        os.mkdir(tmp_dir)
-        self.fs = FileSystem(tmp_dir, db_uri=TEST_MONGO_URI)
+        self.tmp_dir = "/tmp/test"
+        if os.path.exists(self.tmp_dir):
+            shutil.rmtree(self.tmp_dir)
+        os.mkdir(self.tmp_dir)
+        self.fs = FileSystem(self.tmp_dir, use_mongomock=USE_MONGOMOCK)
         self.fs.db.drop()
 
     def test_create_file(self):
@@ -97,7 +100,6 @@ class TestFileSystem(unittest.TestCase):
         self.assertListEqual(["cp"], self.fs.list("/dir1/subdir2/pepe"))
         self.assertListEqual(["file"], self.fs.list("/this/is/test"))
 
-        
     def test_exists(self):
         namespace = "test"
         self.assertFalse(self.fs.exists("/my_file.txt", namespace=namespace))
@@ -106,6 +108,21 @@ class TestFileSystem(unittest.TestCase):
         self.fs.put(path=path, content=content.encode(), namespace=namespace)
         self.assertTrue(self.fs.exists("/my_file.txt", namespace=namespace))
         self.assertFalse(self.fs.exists("/my_file.txt"))
+
+    def test_get_id(self):
+        namespace = "test"
+        self.assertIsNone(self.fs.get_id("/my_file.txt", namespace=namespace))
+        content = "This is a test"
+        path = "/my_file.txt"
+        self.fs.put(path=path, content=content.encode(), namespace=namespace)
+        file_id = str(self.fs.get_id("/my_file.txt", namespace=namespace))
+
+        self.assertIsNotNone(file_id)
+        with open(os.path.join(self.tmp_dir, file_id)) as f:
+            actual_content = f.read()
+
+        self.assertEqual(content, actual_content)
+        self.assertIsNone(self.fs.get_id("/my_file.txt"))
 
     # Mongomock aggregate does not work
     def test_directories(self):
@@ -145,7 +162,6 @@ class TestFileSystem(unittest.TestCase):
         self.assertEqual({}, self.fs.get_extras(path="/first"))
         self.fs.set_extras(path="/first", extras={"foo": "bar"})
         self.assertEqual({"foo": "bar"}, self.fs.get_extras(path="/first"))
-
 
     def test_change_namespace(self):
         namespace = "test_1"
@@ -203,7 +219,7 @@ class TestBufferWrapper(unittest.TestCase):
     test_file_dict = {'name': 'test_file', 'namespace': 'test-namespace'}
 
     def setUp(self):
-        self.mongo_client = MongoClient(host=TEST_MONGO_URI)
+        self.mongo_client = mongomock.MongoClient(TEST_MONGO_URI)
         self.db = self.mongo_client.get_default_database().file
         self.db.drop()
 
