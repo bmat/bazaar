@@ -1,14 +1,13 @@
-from typing import Optional
-
-import mongomock
-from pymongo import MongoClient
-from collections import namedtuple
-from fs import open_fs
-from datetime import datetime
 import io
 import os
 import re
+from collections import namedtuple
+from datetime import datetime
+from typing import Optional
 
+import mongomock
+from fs import open_fs
+from pymongo import MongoClient
 
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
 
@@ -160,7 +159,10 @@ class FileSystem(object):
             return False
 
         # Perform the update
-        r = self.db.update_one({"name": path, "namespace": from_namespace}, {"$set": {"namespace": to_namespace, "updated": datetime.utcnow()}})
+        r = self.db.update_one(
+            {"name": path, "namespace": from_namespace},
+            {"$set": {"namespace": to_namespace, "updated": datetime.utcnow()}}
+            )
         # In case source does not exist, matched_count is 0
         return r.matched_count > 0
 
@@ -170,7 +172,10 @@ class FileSystem(object):
             namespace = self.namespace
 
         # Perform the update
-        r = self.db.update_one({"name": path, "namespace": namespace}, {"$set": {"extras": extras, "updated": datetime.utcnow()}})
+        r = self.db.update_one(
+            {"name": path, "namespace": namespace},
+            {"$set": {"extras": extras, "updated": datetime.utcnow()}}
+            )
         return r.matched_count > 0
 
     def get_extras(self, path, namespace=None):
@@ -193,16 +198,21 @@ class FileSystem(object):
         new_file = d is None
 
         if new_file:
-            insert_info = self.db.insert_one({
-                "name": path,
-                "namespace": namespace,
-                "created": datetime.utcnow(),
-                "updated": datetime.utcnow(),
-                "size": len(content)
-            })
+            insert_info = self.db.insert_one(
+                {
+                    "name": path,
+                    "namespace": namespace,
+                    "created": datetime.utcnow(),
+                    "updated": datetime.utcnow(),
+                    "size": len(content)
+                }
+            )
             filename = str(insert_info.inserted_id)
         else:
-            self.db.update_one({"name": path, "namespace": namespace}, {"$set": {"size": len(content), "updated": datetime.utcnow()}})
+            self.db.update_one(
+                {"name": path, "namespace": namespace},
+                {"$set": {"size": len(content), "updated": datetime.utcnow()}}
+                )
             filename = str(d["_id"])
 
         try:
@@ -214,7 +224,10 @@ class FileSystem(object):
                 self.db.delete_one({"name": path, "namespace": namespace})
             else:
                 # Backup data
-                self.db.update_one({"name": path, "namespace": namespace}, {"$set": {"size": d["size"], "updated": d["updated"]}})
+                self.db.update_one(
+                    {"name": path, "namespace": namespace},
+                    {"$set": {"size": d["size"], "updated": d["updated"]}}
+                    )
             raise e
 
     def list(self, path, namespace=None):
@@ -310,4 +323,3 @@ class FileSystem(object):
         if db_object is not None:
             return db_object["_id"]
         return None
-

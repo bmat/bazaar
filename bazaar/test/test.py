@@ -10,6 +10,7 @@ try:
     from bazaar.bazaar import BufferWrapper, FileSystem
 except ImportError:
     import sys
+
     sys.path.insert(1, '.')
     from bazaar.bazaar import BufferWrapper, FileSystem
 
@@ -176,7 +177,9 @@ class TestFileSystem(unittest.TestCase):
         self.assertTrue(self.fs.exists(path="/original", namespace=namespace_2))
 
         # wrong cases
-        self.assertFalse(self.fs.change_namespace(path="/not_exists", from_namespace=namespace, to_namespace=namespace_2))
+        self.assertFalse(
+            self.fs.change_namespace(path="/not_exists", from_namespace=namespace, to_namespace=namespace_2)
+        )
         self.fs.put(namespace=namespace, path="/original", content="a".encode())
         self.assertFalse(self.fs.change_namespace(path="/original", from_namespace=namespace, to_namespace=namespace_2))
 
