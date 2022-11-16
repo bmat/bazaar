@@ -273,6 +273,12 @@ class FileSystem(object):
         if namespace is None:
             namespace = self.namespace
 
+        file_doc = self.db.find_one({"name": path, "namespace": namespace})
+        if file_doc is None:
+            raise ValueError(f"Couldn't find file {path} in {namespace}.")
+        file_id = str(file_doc['_id'])
+
+        self.fs.remove(file_id)
         r = self.db.delete_one({"name": path, "namespace": namespace})
         return r.deleted_count > 0
 
