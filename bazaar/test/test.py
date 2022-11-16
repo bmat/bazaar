@@ -1,8 +1,7 @@
 import io
-import unittest
-import shutil
 import os
-import logging
+import shutil
+import unittest
 
 from pymongo import MongoClient
 

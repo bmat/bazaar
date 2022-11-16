@@ -1,10 +1,11 @@
-from pymongo import MongoClient
-from collections import namedtuple
-from fs import open_fs
-from datetime import datetime
 import io
 import os
 import re
+from collections import namedtuple
+from datetime import datetime
+
+from pymongo import MongoClient
+from fs import open_fs
 
 
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
