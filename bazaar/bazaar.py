@@ -295,3 +295,15 @@ class FileSystem(object):
             namespace = self.namespace
 
         return self.db.find_one({"name": path, "namespace": namespace}, {"_id": 1}) is not None
+
+    def get_url(self, path: str, namespace: str = None) -> str:
+        path = self.sanitize_path(path, False)
+        if namespace is None:
+            namespace = self.namespace
+
+        file_info = self.db.find_one({"name": path, "namespace": namespace}, {"_id": 1})
+        
+        if file_info is None:
+            raise FileNotFoundError("[Errno 2] No such file or directory: '{filename}'".format(filename=path))
+        
+        return self.fs.geturl(str(file_info["_id"]))

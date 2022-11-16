@@ -192,6 +192,16 @@ class TestFileSystem(unittest.TestCase):
         with self.fs.open(path, 'r', namespace=namespace) as hello_world_file:
             self.assertEqual(hello_world_file.read(), 'Hello world!')
 
+    def test_url_inexistent_file(self):
+        with self.assertRaises(FileNotFoundError) as context:
+            self.fs.get_url('INEXISTENT-FILE.txt', namespace='INEXISTENT-NAMESPACE')
+        self.assertIn("No such file or directory", str(context.exception))
+
+    def test_url_existent_file(self):
+        path, namespace = self._create_hello_world_file()
+        url = self.fs.get_url(path, namespace=namespace)
+        self.assertIn("file:///tmp", url)
+
     def _create_hello_world_file(self):
         path = 'example.txt'
         namespace = 'example-namespace'
