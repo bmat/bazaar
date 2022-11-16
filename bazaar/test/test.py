@@ -191,6 +191,14 @@ class TestFileSystem(unittest.TestCase):
         with self.fs.open(path, 'r', namespace=namespace) as hello_world_file:
             self.assertEqual(hello_world_file.read(), 'Hello world!')
 
+    def test_remove(self):
+        path, namespace = self._create_hello_world_file()
+        file_info = self.fs.db.find_one({'name': self.fs.sanitize_path(path, False), 'namespace': namespace})
+        result = self.fs.remove(path, namespace=namespace)
+        assert result
+        assert not self.fs.exists(path, namespace=namespace)  # Test it was deleted from Mongo
+        assert not self.fs.fs.exists(str(file_info['_id']))  # Test it was deleted from the file system itself
+
     def _create_hello_world_file(self):
         path = 'example.txt'
         namespace = 'example-namespace'
