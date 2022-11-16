@@ -277,7 +277,7 @@ class FileSystem(object):
             )
 
     def remove(self, path, namespace=None) -> bool:
-        path = os.path.realpath(path)
+        path = self.sanitize_path(path, False)
         if namespace is None:
             namespace = self.namespace
 
