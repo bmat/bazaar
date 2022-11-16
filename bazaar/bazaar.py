@@ -14,17 +14,6 @@ FILE_PROJECT = {f: True for f in FILE_NEEDED_FIELDS}
 FILE_SIZE_CHANGING_MODES = {'w', 'a', 'x'}
 
 
-# class File(Document):
-#     created = DateTimeField()
-#     updated = DateTimeField()
-#     name = StringField()
-#     size = IntField()
-#     namespace = StringField()
-#     extras = DictField()
-#
-#     meta = {'db_alias': 'bazaar'}
-
-
 class BufferWrapper(object):
     def __init__(self, wrapped_object, file_data, db):
         self.wrapped_object = wrapped_object
