@@ -1,10 +1,14 @@
-from pymongo import MongoClient
-from collections import namedtuple
-from fs import open_fs
-from datetime import datetime
 import io
 import os
 import re
+from collections import namedtuple
+from datetime import datetime
+from typing import Any, Dict, List, Union
+
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from fs import open_fs
+from fs.iotools import RawWrapper
 
 
 FileAttrs = namedtuple('FileAttrs', ["created", "updated", "name", "size", "namespace"])
@@ -14,24 +18,18 @@ FILE_PROJECT = {f: True for f in FILE_NEEDED_FIELDS}
 FILE_SIZE_CHANGING_MODES = {'w', 'a', 'x'}
 
 
-# class File(Document):
-#     created = DateTimeField()
-#     updated = DateTimeField()
-#     name = StringField()
-#     size = IntField()
-#     namespace = StringField()
-#     extras = DictField()
-#
-#     meta = {'db_alias': 'bazaar'}
-
-
 class BufferWrapper(object):
-    def __init__(self, wrapped_object, file_data, db):
+    def __init__(
+        self,
+        wrapped_object: Union[io.TextIOWrapper, RawWrapper],
+        file_data: Dict[str, Any],
+        db: Collection
+    ):
         self.wrapped_object = wrapped_object
         self.file_data = file_data
         self.db = db
 
-    def __getattr__(self, attr):
+    def __getattr__(self, attr: str) -> Any:
         orig_attr = self.wrapped_object.__getattribute__(attr)
         if callable(orig_attr):
             def hooked(*args, **kwargs):
@@ -65,7 +63,7 @@ class BufferWrapper(object):
                 return True
         return False
 
-    def can_mode_change_size(self):
+    def can_mode_change_size(self) -> bool:
         mode = getattr(self.wrapped_object, 'mode', None)
         if mode is not None:
             can_change_size = self.wrapped_object.mode[0] in FILE_SIZE_CHANGING_MODES
@@ -100,7 +98,7 @@ class FileSystem(object):
         self.db = self.mongo.get_default_database().file
         self.namespace = namespace
 
-    def get(self, path, namespace=None):
+    def get(self, path: str, namespace: str = None) -> bytes:
         path = self.sanitize_path(path, False)
         if namespace is None:
             namespace = self.namespace
@@ -110,7 +108,7 @@ class FileSystem(object):
             with self.fs.open(str(d["_id"]), "rb") as f:
                 return f.read()
 
-    def open(self, path, mode, namespace=None):
+    def open(self, path: str, mode: str, namespace: str = None) -> BufferWrapper:
         path = self.sanitize_path(path, False)
         if namespace is None:
             namespace = self.namespace
@@ -148,7 +146,7 @@ class FileSystem(object):
                 d.delete()
             raise e
 
-    def change_namespace(self, path, from_namespace, to_namespace):
+    def change_namespace(self, path: str, from_namespace: str, to_namespace: str) -> bool:
         path = self.sanitize_path(path, False)
         # Destination should not exists
         if self.db.find_one({"name": path, "namespace": to_namespace}, {"_id": 1}) is not None:
@@ -159,7 +157,7 @@ class FileSystem(object):
         # In case source does not exist, matched_count is 0
         return r.matched_count > 0
 
-    def set_extras(self, path, extras, namespace=None):
+    def set_extras(self, path: str, extras: Dict[str, Any], namespace: str = None) -> bool:
         path = self.sanitize_path(path, False)
         if namespace is None:
             namespace = self.namespace
@@ -168,7 +166,7 @@ class FileSystem(object):
         r = self.db.update_one({"name": path, "namespace": namespace}, {"$set": {"extras": extras, "updated": datetime.utcnow()}})
         return r.matched_count > 0
 
-    def get_extras(self, path, namespace=None):
+    def get_extras(self, path: str, namespace: str = None) -> Dict[str, Any]:
         path = self.sanitize_path(path, False)
         if namespace is None:
             namespace = self.namespace
@@ -179,7 +177,7 @@ class FileSystem(object):
         else:
             return {}
 
-    def put(self, path, content, namespace=None):
+    def put(self, path: str, content: bytes, namespace: str = None):
         path = self.sanitize_path(path, False)
         if namespace is None:
             namespace = self.namespace
@@ -212,7 +210,7 @@ class FileSystem(object):
                 self.db.update_one({"name": path, "namespace": namespace}, {"$set": {"size": d["size"], "updated": d["updated"]}})
             raise e
 
-    def list(self, path, namespace=None):
+    def list(self, path: str, namespace: str = None) -> List[str]:
         path = self.sanitize_path(path, True)
         if namespace is None:
             namespace = self.namespace
@@ -224,7 +222,7 @@ class FileSystem(object):
         return [file["name"].rsplit("/", 1)[-1] for file in files]
 
     @staticmethod
-    def sanitize_path(path, directory):
+    def sanitize_path(path: str, directory: str) -> str:
         path = os.path.realpath(path)
 
         if directory:
@@ -236,7 +234,7 @@ class FileSystem(object):
 
         return path
 
-    def list_dirs(self, path, namespace=None):
+    def list_dirs(self, path: str, namespace: str = None) -> List[str]:
         path = self.sanitize_path(path, True)
         # query = list_dir_query(path)
         if namespace is None:
@@ -254,7 +252,7 @@ class FileSystem(object):
         ]
         return [f["_id"] for f in self.db.aggregate(pipeline)]
 
-    def rename(self, old_path, new_path, namespace=None):
+    def rename(self, old_path: str, new_path: str, namespace: str = None) -> bool:
         old_path = self.sanitize_path(old_path, False)
         new_path = self.sanitize_path(new_path, False)
         if namespace is None:
@@ -263,7 +261,7 @@ class FileSystem(object):
         r = self.db.update_one({"name": old_path, "namespace": namespace}, {"$set": {"name": new_path}})
         return r.matched_count > 0
 
-    def attrs(self, path, namespace=None):
+    def attrs(self, path: str, namespace: str = None) -> FileAttrs:
         path = self.sanitize_path(path, False)
         if namespace is None:
             namespace = self.namespace
@@ -278,18 +276,24 @@ class FileSystem(object):
                 namespace=f["namespace"]
             )
 
-    def remove(self, path, namespace=None):
-        path = os.path.realpath(path)
+    def remove(self, path, namespace=None) -> bool:
+        path = self.sanitize_path(path, False)
         if namespace is None:
             namespace = self.namespace
 
+        file_doc = self.db.find_one({"name": path, "namespace": namespace})
+        if file_doc is None:
+            raise ValueError(f"Couldn't find file {path} in {namespace}.")
+        file_id = str(file_doc['_id'])
+
+        self.fs.remove(file_id)
         r = self.db.delete_one({"name": path, "namespace": namespace})
         return r.deleted_count > 0
 
     def close(self):
         self.fs.close()
 
-    def exists(self, path, namespace=None):
+    def exists(self, path: str, namespace: str = None) -> bool:
         path = self.sanitize_path(path, False)
         if namespace is None:
             namespace = self.namespace
